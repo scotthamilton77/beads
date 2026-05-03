@@ -56,8 +56,13 @@ func TestEmbeddedAutoImportJSONLNoExplicitCommit(t *testing.T) {
 	// read-only in cmd/bd/main.go's dispatcher and skips
 	// maybeAutoImportJSONL entirely — using it here would leave the
 	// destination empty and the test would assert against zero issues.
-	// bd create runs auto-import in pre-run and then performs its own
-	// write; PersistentPostRun's maybeAutoCommit handles the Dolt commit.
+	// bd create runs maybeAutoImportJSONL in PersistentPreRun (which
+	// stages the imported issues in the Dolt working set without an
+	// explicit DOLT_COMMIT), performs its own create write into the same
+	// working set, and then explicitly calls store.Commit at the end of
+	// cmd/bd/create.go — that single commit picks up both the auto-import
+	// and the new issue. PersistentPostRun's maybeAutoCommit is then a
+	// no-op (nothing left to commit).
 	bdCreate(t, bd, dstDir, "post-import marker", "--type", "task")
 	issues := bdListJSON(t, bd, dstDir)
 	if len(issues) != 4 {
