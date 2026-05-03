@@ -17,6 +17,13 @@ type jsonlImporter interface {
 	ImportJSONLData(ctx context.Context, issues []*types.Issue, configEntries map[string]string, actor string) (int, error)
 }
 
+// fallbackImporter is the function maybeAutoImportJSONL invokes for stores
+// that do not implement jsonlImporter (server-mode dolt). It exists as a
+// package-level variable so tests can substitute a counter and verify the
+// top-level emptiness guard prevents the fallback path from running on a
+// non-empty database. Production builds always use importFromLocalJSONLFull.
+var fallbackImporter = importFromLocalJSONLFull
+
 // maybeAutoImportJSONL checks whether the database is empty and a
 // issues.jsonl file exists in beadsDir. When both conditions are true it
 // auto-imports the JSONL data so users upgrading from pre-0.56 (which used
@@ -90,7 +97,7 @@ func maybeAutoImportJSONL(ctx context.Context, s storage.DoltStorage, beadsDir s
 	// Fallback for non-embedded stores: multi-call path (original behavior).
 	fmt.Fprintf(os.Stderr, "auto-importing %d bytes from %s into empty database...\n", info.Size(), jsonlPath)
 
-	result, err := importFromLocalJSONLFull(ctx, s, jsonlPath)
+	result, err := fallbackImporter(ctx, s, jsonlPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "warning: auto-import from %s failed: %v\n", jsonlPath, err)
 		fmt.Fprintf(os.Stderr, "\nYour issues are still safe in %s.\n", jsonlPath)
