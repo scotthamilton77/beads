@@ -255,6 +255,38 @@ func TestRemoveHookCommand(t *testing.T) {
 		},
 	}
 
+	// Separate test: sibling commands within the same hook entry must be
+	// preserved when only the matching command is removed. The bug that
+	// prompted this test dropped the entire hook entry on first match,
+	// silently deleting any sibling commands in the same hooks array.
+	t.Run("preserves sibling commands in same hook entry", func(t *testing.T) {
+		hooks := map[string]interface{}{
+			"SessionStart": []interface{}{
+				map[string]interface{}{
+					"matcher": "",
+					"hooks": []interface{}{
+						map[string]interface{}{"type": "command", "command": "bd prime"},
+						map[string]interface{}{"type": "command", "command": "other-tool"},
+					},
+				},
+			},
+		}
+		removeHookCommand(hooks, "SessionStart", "bd prime")
+
+		entries, ok := hooks["SessionStart"].([]interface{})
+		if !ok || len(entries) != 1 {
+			t.Fatalf("expected 1 hook entry to remain, got %v", hooks["SessionStart"])
+		}
+		entryMap := entries[0].(map[string]interface{})
+		cmds := entryMap["hooks"].([]interface{})
+		if len(cmds) != 1 {
+			t.Fatalf("expected 1 sibling command to remain, got %d", len(cmds))
+		}
+		if cmds[0].(map[string]interface{})["command"] != "other-tool" {
+			t.Errorf("sibling command was lost; commands: %v", cmds)
+		}
+	})
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			removeHookCommand(tt.existingHooks, tt.event, tt.command)

@@ -372,15 +372,17 @@ func addHookCommand(hooks map[string]interface{}, event, command string) bool {
 	return true
 }
 
-// removeHookCommand removes a hook command from an event
+// removeHookCommand removes a specific command from an event's hook entries.
+// Only the matching command object is removed; sibling commands in the same
+// hook entry are preserved. A hook entry is dropped only when its command list
+// becomes empty after filtering.
 func removeHookCommand(hooks map[string]interface{}, event, command string) {
 	eventHooks, ok := hooks[event].([]interface{})
 	if !ok {
 		return
 	}
 
-	// Filter out bd prime hooks
-	// Initialize as empty slice (not nil) to avoid JSON null serialization
+	// Initialize as empty slice (not nil) to avoid JSON null serialization.
 	filtered := make([]interface{}, 0, len(eventHooks))
 	for _, hook := range eventHooks {
 		hookMap, ok := hook.(map[string]interface{})
@@ -395,21 +397,30 @@ func removeHookCommand(hooks map[string]interface{}, event, command string) {
 			continue
 		}
 
-		keepHook := true
+		// Filter only the matching command; preserve any siblings.
+		remaining := make([]interface{}, 0, len(commands))
+		removed := false
 		for _, cmd := range commands {
 			cmdMap, ok := cmd.(map[string]interface{})
 			if !ok {
+				remaining = append(remaining, cmd)
 				continue
 			}
 			if cmdMap["command"] == command {
-				keepHook = false
-				fmt.Printf("✓ Removed %s hook\n", event)
-				break
+				removed = true
+				continue
 			}
+			remaining = append(remaining, cmd)
 		}
 
-		if keepHook {
-			filtered = append(filtered, hook)
+		if removed {
+			fmt.Printf("✓ Removed %s hook\n", event)
+		}
+
+		// Drop the hook entry only when it has no commands left.
+		if len(remaining) > 0 {
+			hookMap["hooks"] = remaining
+			filtered = append(filtered, hookMap)
 		}
 	}
 
