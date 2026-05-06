@@ -86,15 +86,15 @@ func parseEnvelope(t *testing.T, raw []byte) primeEnvelope {
 	return env
 }
 
-// TestPrime_GeminiHook_DefaultPath: with --gemini-hook and no PRIME.md
+// TestPrime_HookJSON_DefaultPath: with --hook-json and no PRIME.md
 // override, output is the JSON envelope wrapping the generated workflow
 // context.
-func TestPrime_GeminiHook_DefaultPath(t *testing.T) {
+func TestPrime_HookJSON_DefaultPath(t *testing.T) {
 	binPath := buildBDUnderTest(t)
 	workDir := t.TempDir()
 	initBeadsWorkspace(t, binPath, workDir)
 
-	stdout, _ := runPrimeBinary(t, binPath, workDir, "--gemini-hook")
+	stdout, _ := runPrimeBinary(t, binPath, workDir, "--hook-json")
 	env := parseEnvelope(t, stdout)
 
 	if env.HookSpecificOutput.AdditionalContext == "" {
@@ -108,10 +108,10 @@ func TestPrime_GeminiHook_DefaultPath(t *testing.T) {
 	}
 }
 
-// TestPrime_GeminiHook_LocalPrimeOverride: with --gemini-hook and a
+// TestPrime_HookJSON_LocalPrimeOverride: with --hook-json and a
 // .beads/PRIME.md file present, output is the JSON envelope with that file's
 // contents in additionalContext (verbatim).
-func TestPrime_GeminiHook_LocalPrimeOverride(t *testing.T) {
+func TestPrime_HookJSON_LocalPrimeOverride(t *testing.T) {
 	binPath := buildBDUnderTest(t)
 	workDir := t.TempDir()
 	initBeadsWorkspace(t, binPath, workDir)
@@ -122,7 +122,7 @@ func TestPrime_GeminiHook_LocalPrimeOverride(t *testing.T) {
 		t.Fatalf("write PRIME.md: %v", err)
 	}
 
-	stdout, _ := runPrimeBinary(t, binPath, workDir, "--gemini-hook")
+	stdout, _ := runPrimeBinary(t, binPath, workDir, "--hook-json")
 	env := parseEnvelope(t, stdout)
 
 	if env.HookSpecificOutput.AdditionalContext != custom {
@@ -130,11 +130,11 @@ func TestPrime_GeminiHook_LocalPrimeOverride(t *testing.T) {
 	}
 }
 
-// TestPrime_GeminiHook_NotJSON_WithoutFlag is a regression guard: without
-// --gemini-hook, prime output is raw markdown — NOT a JSON envelope.
+// TestPrime_HookJSON_NotJSON_WithoutFlag is a regression guard: without
+// --hook-json, prime output is raw markdown — NOT a JSON envelope.
 // This is the binary-level companion to the in-process unit test in
 // prime_test.go and protects the existing Claude/CLI contract.
-func TestPrime_GeminiHook_NotJSON_WithoutFlag(t *testing.T) {
+func TestPrime_HookJSON_NotJSON_WithoutFlag(t *testing.T) {
 	binPath := buildBDUnderTest(t)
 	workDir := t.TempDir()
 	initBeadsWorkspace(t, binPath, workDir)
@@ -150,20 +150,20 @@ func TestPrime_GeminiHook_NotJSON_WithoutFlag(t *testing.T) {
 	}
 }
 
-// TestPrime_GeminiHook_StealthCompose: --gemini-hook composed with --stealth
+// TestPrime_HookJSON_StealthCompose: --hook-json composed with --stealth
 // emits the JSON envelope, and additionalContext is in stealth mode (no raw
 // `git push` instructions in the close protocol).
-func TestPrime_GeminiHook_StealthCompose(t *testing.T) {
+func TestPrime_HookJSON_StealthCompose(t *testing.T) {
 	binPath := buildBDUnderTest(t)
 	workDir := t.TempDir()
 	initBeadsWorkspace(t, binPath, workDir)
 
-	stdout, _ := runPrimeBinary(t, binPath, workDir, "--gemini-hook", "--stealth")
+	stdout, _ := runPrimeBinary(t, binPath, workDir, "--hook-json", "--stealth")
 	env := parseEnvelope(t, stdout)
 
 	ctx := env.HookSpecificOutput.AdditionalContext
 	if ctx == "" {
-		t.Fatal("expected non-empty additionalContext under --stealth --gemini-hook")
+		t.Fatal("expected non-empty additionalContext under --stealth --hook-json")
 	}
 	// Stealth mode: close protocol must not steer agents to git push.
 	// (Local-only also suppresses git ops, but stealth is the explicit user
@@ -177,11 +177,11 @@ func TestPrime_GeminiHook_StealthCompose(t *testing.T) {
 	}
 }
 
-// TestPrime_GeminiHook_GlobalPrimeOverride: with --gemini-hook and a
+// TestPrime_HookJSON_GlobalPrimeOverride: with --hook-json and a
 // ~/.config/beads/PRIME.md file present (XDG path), output is the JSON
 // envelope wrapping that file's contents. This exercises the third
 // custom-PRIME.md path through the wrapper.
-func TestPrime_GeminiHook_GlobalPrimeOverride(t *testing.T) {
+func TestPrime_HookJSON_GlobalPrimeOverride(t *testing.T) {
 	binPath := buildBDUnderTest(t)
 	workDir := t.TempDir()
 	initBeadsWorkspace(t, binPath, workDir)
@@ -213,7 +213,7 @@ func TestPrime_GeminiHook_GlobalPrimeOverride(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, binPath, "prime", "--gemini-hook")
+	cmd := exec.CommandContext(ctx, binPath, "prime", "--hook-json")
 	cmd.Dir = workDir
 	cmd.Env = append(os.Environ(),
 		"HOME="+home,
@@ -227,7 +227,7 @@ func TestPrime_GeminiHook_GlobalPrimeOverride(t *testing.T) {
 	cmd.Stdout = &outBuf
 	cmd.Stderr = &errBuf
 	if err := cmd.Run(); err != nil {
-		t.Fatalf("bd prime --gemini-hook: %v\nstdout: %s\nstderr: %s", err, outBuf.String(), errBuf.String())
+		t.Fatalf("bd prime --hook-json: %v\nstdout: %s\nstderr: %s", err, outBuf.String(), errBuf.String())
 	}
 
 	env := parseEnvelope(t, outBuf.Bytes())
@@ -236,13 +236,13 @@ func TestPrime_GeminiHook_GlobalPrimeOverride(t *testing.T) {
 	}
 }
 
-// TestPrime_GeminiHook_RedirectedPrimeOverride: with --gemini-hook and a
+// TestPrime_HookJSON_RedirectedPrimeOverride: with --hook-json and a
 // PRIME.md staged at <beadsDir>/PRIME.md where <beadsDir> is NOT the local
 // .beads directory (i.e. relocated via BEADS_DIR), the output is the JSON
 // envelope wrapping that file's contents. This exercises the redirected
 // path independently from the local path so DoD #2 ("ALL FOUR output paths
 // wrap correctly") is fully covered end-to-end.
-func TestPrime_GeminiHook_RedirectedPrimeOverride(t *testing.T) {
+func TestPrime_HookJSON_RedirectedPrimeOverride(t *testing.T) {
 	binPath := buildBDUnderTest(t)
 
 	// CWD has no .beads/ at all — the local override can't fire.
@@ -263,7 +263,7 @@ func TestPrime_GeminiHook_RedirectedPrimeOverride(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, binPath, "prime", "--gemini-hook")
+	cmd := exec.CommandContext(ctx, binPath, "prime", "--hook-json")
 	cmd.Dir = workDir
 	cmd.Env = append(os.Environ(),
 		"HOME="+t.TempDir(),
@@ -277,7 +277,7 @@ func TestPrime_GeminiHook_RedirectedPrimeOverride(t *testing.T) {
 	cmd.Stdout = &outBuf
 	cmd.Stderr = &errBuf
 	if err := cmd.Run(); err != nil {
-		t.Fatalf("bd prime --gemini-hook: %v\nstdout: %s\nstderr: %s", err, outBuf.String(), errBuf.String())
+		t.Fatalf("bd prime --hook-json: %v\nstdout: %s\nstderr: %s", err, outBuf.String(), errBuf.String())
 	}
 
 	env := parseEnvelope(t, outBuf.Bytes())
@@ -286,10 +286,10 @@ func TestPrime_GeminiHook_RedirectedPrimeOverride(t *testing.T) {
 	}
 }
 
-// TestPrime_GeminiHook_NoBeadsWorkspace: when bd prime would otherwise emit
-// nothing (no beads workspace resolved), --gemini-hook still emits the empty
+// TestPrime_HookJSON_NoBeadsWorkspace: when bd prime would otherwise emit
+// nothing (no beads workspace resolved), --hook-json still emits the empty
 // JSON envelope so Gemini's strict stdout-must-be-JSON contract is honored.
-func TestPrime_GeminiHook_NoBeadsWorkspace(t *testing.T) {
+func TestPrime_HookJSON_NoBeadsWorkspace(t *testing.T) {
 	binPath := buildBDUnderTest(t)
 	// Use a freshly created tmpdir with NO beads workspace and HOME isolated
 	// so FindBeadsDir cannot walk up into the test repo.
@@ -298,7 +298,7 @@ func TestPrime_GeminiHook_NoBeadsWorkspace(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, binPath, "prime", "--gemini-hook")
+	cmd := exec.CommandContext(ctx, binPath, "prime", "--hook-json")
 	cmd.Dir = workDir
 	cmd.Env = append(os.Environ(),
 		"HOME="+home,
@@ -312,7 +312,7 @@ func TestPrime_GeminiHook_NoBeadsWorkspace(t *testing.T) {
 	cmd.Stdout = &outBuf
 	cmd.Stderr = &errBuf
 	if err := cmd.Run(); err != nil {
-		t.Fatalf("bd prime --gemini-hook: %v\nstdout: %s\nstderr: %s", err, outBuf.String(), errBuf.String())
+		t.Fatalf("bd prime --hook-json: %v\nstdout: %s\nstderr: %s", err, outBuf.String(), errBuf.String())
 	}
 
 	env := parseEnvelope(t, outBuf.Bytes())

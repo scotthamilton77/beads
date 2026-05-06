@@ -115,21 +115,24 @@ func installGemini(env geminiEnv, project bool, stealth bool) error {
 		settings["hooks"] = hooks
 	}
 
-	// Gemini CLI requires stdout to be valid JSON for hooks; --gemini-hook
-	// wraps bd prime's markdown in the SessionStart envelope shape Gemini
-	// expects. PreCompress is intentionally NOT registered: per Gemini docs
-	// it is advisory-only and does not support additionalContext injection.
-	command := "bd prime --gemini-hook"
+	// Gemini CLI (and Claude Code, Codex) require hook stdout to be valid JSON;
+	// --hook-json wraps bd prime's markdown in the shared SessionStart envelope.
+	// PreCompress is intentionally NOT registered: Gemini's PreCompress event is
+	// advisory-only and does not support additionalContext injection — context
+	// re-injection after compression is architecturally impossible there.
+	command := "bd prime --hook-json"
 	if stealth {
-		command = "bd prime --stealth --gemini-hook"
+		command = "bd prime --stealth --hook-json"
 	}
 
-	// Migration sweep: remove any pre-fix legacy variants before registering
+	// Migration sweep: remove all known legacy command variants before registering
 	// the canonical command. Re-running setup must be a clean upgrade path —
-	// leaving stale entries alongside the new one causes Gemini to invoke
-	// both, and the legacy variant emits raw markdown that violates Gemini's
-	// strict stdout-must-be-JSON contract.
-	legacyVariants := []string{"bd prime", "bd prime --stealth"}
+	// stale entries alongside the new one cause Gemini to invoke both, and any
+	// pre-JSON variant emits raw markdown that violates the strict hook contract.
+	legacyVariants := []string{
+		"bd prime", "bd prime --stealth",
+		"bd prime --gemini-hook", "bd prime --stealth --gemini-hook",
+	}
 	for _, legacy := range legacyVariants {
 		if legacy == command {
 			continue // never remove the variant we're about to add
@@ -137,10 +140,12 @@ func installGemini(env geminiEnv, project bool, stealth bool) error {
 		removeHookCommand(hooks, "SessionStart", legacy)
 		removeHookCommand(hooks, "PreCompress", legacy)
 	}
-	// Also clear any --gemini-hook registration from PreCompress — we never
-	// register there, but a prior manual edit might have added it.
-	removeHookCommand(hooks, "PreCompress", "bd prime --gemini-hook")
-	removeHookCommand(hooks, "PreCompress", "bd prime --stealth --gemini-hook")
+	// Also clear any --hook-json registration from PreCompress. Beads previously
+	// registered bd prime on PreCompress before we discovered that Gemini's
+	// PreCompress event is advisory-only and cannot inject additionalContext
+	// into the model regardless of output format. Re-running setup migrates cleanly.
+	removeHookCommand(hooks, "PreCompress", "bd prime --hook-json")
+	removeHookCommand(hooks, "PreCompress", "bd prime --stealth --hook-json")
 
 	if addHookCommand(hooks, "SessionStart", command) {
 		_, _ = fmt.Fprintln(env.stdout, "✓ Registered SessionStart hook")
@@ -257,6 +262,8 @@ func removeGemini(env geminiEnv, project bool) error {
 				"bd prime --stealth",
 				"bd prime --gemini-hook",
 				"bd prime --stealth --gemini-hook",
+				"bd prime --hook-json",
+				"bd prime --stealth --hook-json",
 			}
 			for _, cmd := range variants {
 				removeHookCommand(hooks, "SessionStart", cmd)
@@ -335,7 +342,7 @@ func geminiSessionStartCommands(settingsPath string) []string {
 // violates Gemini's strict stdout-must-be-JSON hook contract.
 func hasCurrentGeminiHooks(settingsPath string) bool {
 	for _, cmd := range geminiSessionStartCommands(settingsPath) {
-		if cmd == "bd prime --gemini-hook" || cmd == "bd prime --stealth --gemini-hook" {
+		if cmd == "bd prime --hook-json" || cmd == "bd prime --stealth --hook-json" {
 			return true
 		}
 	}
@@ -347,8 +354,10 @@ func hasCurrentGeminiHooks(settingsPath string) bool {
 // installations that need upgrading via bd setup gemini.
 func hasGeminiBeadsHooks(settingsPath string) bool {
 	for _, cmd := range geminiSessionStartCommands(settingsPath) {
-		if cmd == "bd prime" || cmd == "bd prime --stealth" ||
-			cmd == "bd prime --gemini-hook" || cmd == "bd prime --stealth --gemini-hook" {
+		switch cmd {
+		case "bd prime", "bd prime --stealth",
+			"bd prime --gemini-hook", "bd prime --stealth --gemini-hook",
+			"bd prime --hook-json", "bd prime --stealth --hook-json":
 			return true
 		}
 	}

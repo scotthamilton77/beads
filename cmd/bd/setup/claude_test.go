@@ -418,7 +418,7 @@ func TestInstallClaudeUsesPrimeForClaudeHooks(t *testing.T) {
 	settingsJSON := string(data)
 
 	for _, want := range []string{
-		`"command": "bd prime"`,
+		`"command": "bd prime --hook-json"`,
 		`"SessionStart"`,
 		`"PreCompact"`,
 	} {
@@ -510,6 +510,44 @@ func TestHasBeadsHooks(t *testing.T) {
 								map[string]interface{}{
 									"type":    "command",
 									"command": "bd prime --stealth",
+								},
+							},
+						},
+					},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "has bd prime --hook-json hook (current format)",
+			settingsData: map[string]interface{}{
+				"hooks": map[string]interface{}{
+					"SessionStart": []interface{}{
+						map[string]interface{}{
+							"matcher": "",
+							"hooks": []interface{}{
+								map[string]interface{}{
+									"type":    "command",
+									"command": "bd prime --hook-json",
+								},
+							},
+						},
+					},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "has bd prime --stealth --hook-json hook (current format)",
+			settingsData: map[string]interface{}{
+				"hooks": map[string]interface{}{
+					"PreCompact": []interface{}{
+						map[string]interface{}{
+							"matcher": "",
+							"hooks": []interface{}{
+								map[string]interface{}{
+									"type":    "command",
+									"command": "bd prime --stealth --hook-json",
 								},
 							},
 						},

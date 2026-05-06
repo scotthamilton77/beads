@@ -264,28 +264,28 @@ func TestPrimeGlobalFallback_Missing(t *testing.T) {
 	}
 }
 
-// geminiHookEnvelope mirrors the JSON shape produced by outputGeminiHook —
+// hookJSONEnvelope mirrors the JSON shape produced by outputHookJSON —
 // kept in test code so the assertion fails loudly if the production shape
 // drifts.
-type geminiHookEnvelope struct {
+type hookJSONEnvelope struct {
 	HookSpecificOutput struct {
 		HookEventName     string `json:"hookEventName"`
 		AdditionalContext string `json:"additionalContext"`
 	} `json:"hookSpecificOutput"`
 }
 
-func TestOutputGeminiHook_ShapeWithContent(t *testing.T) {
+func TestOutputHookJSON_ShapeWithContent(t *testing.T) {
 	var buf bytes.Buffer
 	const payload = "# Hello\n\nbd ready\n"
-	if err := outputGeminiHook(&buf, payload); err != nil {
-		t.Fatalf("outputGeminiHook: %v", err)
+	if err := outputHookJSON(&buf, payload); err != nil {
+		t.Fatalf("outputHookJSON: %v", err)
 	}
 
 	// json.Encoder.Encode appends a trailing newline; the JSON itself must
 	// still be valid.
 	out := strings.TrimRight(buf.String(), "\n")
 
-	var env geminiHookEnvelope
+	var env hookJSONEnvelope
 	if err := json.Unmarshal([]byte(out), &env); err != nil {
 		t.Fatalf("output is not valid JSON: %v\noutput: %s", err, buf.String())
 	}
@@ -297,15 +297,15 @@ func TestOutputGeminiHook_ShapeWithContent(t *testing.T) {
 	}
 }
 
-func TestOutputGeminiHook_EmptyContent(t *testing.T) {
-	// Empty envelope is the contract for "nothing to inject" — Gemini still
-	// requires valid JSON on stdout, so we cannot just emit nothing.
+func TestOutputHookJSON_EmptyContent(t *testing.T) {
+	// Empty envelope is the contract for "nothing to inject" — the hook host
+	// still requires valid JSON on stdout, so we cannot just emit nothing.
 	var buf bytes.Buffer
-	if err := outputGeminiHook(&buf, ""); err != nil {
-		t.Fatalf("outputGeminiHook: %v", err)
+	if err := outputHookJSON(&buf, ""); err != nil {
+		t.Fatalf("outputHookJSON: %v", err)
 	}
 
-	var env geminiHookEnvelope
+	var env hookJSONEnvelope
 	if err := json.Unmarshal(bytes.TrimRight(buf.Bytes(), "\n"), &env); err != nil {
 		t.Fatalf("output is not valid JSON: %v\noutput: %s", err, buf.String())
 	}
@@ -318,8 +318,8 @@ func TestOutputGeminiHook_EmptyContent(t *testing.T) {
 }
 
 // TestPrime_RawMarkdown_NotJSON_WithoutFlag is a regression guard: without
-// --gemini-hook, prime output must remain raw markdown (current contract for
-// Claude hooks and CLI users). It would be a regression if the JSON envelope
+// --hook-json, prime output must remain raw markdown (used by CLI users and
+// any hook-free integrations). It would be a regression if the JSON envelope
 // leaked into the default path.
 func TestPrime_RawMarkdown_NotJSON_WithoutFlag(t *testing.T) {
 	defer stubIsEphemeralBranch(false)()

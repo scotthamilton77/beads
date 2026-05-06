@@ -24,7 +24,7 @@ var (
 	primeMCPMode        bool
 	primeStealthMode    bool
 	primeExportMode     bool
-	primeGeminiHookMode bool
+	primeHookJSONMode bool
 )
 
 // resolveGlobalPrimePath returns the path to ~/.config/beads/PRIME.md if it
@@ -70,10 +70,10 @@ Config options:
 	- Use --export to dump the default content for customization.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		// emit writes content either as raw text (default behavior) or wrapped
-		// in the Gemini CLI hook JSON envelope when --gemini-hook is set.
+		// in the SessionStart hook JSON envelope when --hook-json is set.
 		emit := func(content string) {
-			if primeGeminiHookMode {
-				_ = outputGeminiHook(os.Stdout, content)
+			if primeHookJSONMode {
+				_ = outputHookJSON(os.Stdout, content)
 			} else {
 				fmt.Print(content)
 			}
@@ -86,11 +86,10 @@ Config options:
 			// CRITICAL: No stderr output, exit 0
 			// This enables cross-platform hook integration.
 			//
-			// Under --gemini-hook we still must emit a valid JSON envelope
-			// (with empty additionalContext) because Gemini's hook contract
-			// requires stdout to be valid JSON.
-			if primeGeminiHookMode {
-				_ = outputGeminiHook(os.Stdout, "")
+			// Under --hook-json we still must emit a valid JSON envelope
+			// (with empty additionalContext) so the hook host receives valid JSON.
+			if primeHookJSONMode {
+				_ = outputHookJSON(os.Stdout, "")
 			}
 			os.Exit(0)
 		}
@@ -143,15 +142,15 @@ Config options:
 		}
 
 		// Output workflow context (adaptive based on MCP and stealth mode).
-		// Buffer first so we can wrap in the Gemini envelope as a single field.
+		// Buffer first so we can wrap in the hook JSON envelope as a single field.
 		var buf bytes.Buffer
 		if err := outputPrimeContext(&buf, mcpMode, stealthMode); err != nil {
 			// Suppress all errors - silent exit with success.
 			// Never write to stderr (breaks Windows compatibility).
-			// Under --gemini-hook still emit the empty envelope so stdout
-			// is valid JSON for Gemini's strict hook contract.
-			if primeGeminiHookMode {
-				_ = outputGeminiHook(os.Stdout, "")
+			// Under --hook-json still emit the empty envelope so stdout
+			// is valid JSON for the hook host.
+			if primeHookJSONMode {
+				_ = outputHookJSON(os.Stdout, "")
 			}
 			os.Exit(0)
 		}
@@ -164,15 +163,15 @@ func init() {
 	primeCmd.Flags().BoolVar(&primeMCPMode, "mcp", false, "Force MCP mode (minimal output)")
 	primeCmd.Flags().BoolVar(&primeStealthMode, "stealth", false, "Stealth mode (no git operations, flush only)")
 	primeCmd.Flags().BoolVar(&primeExportMode, "export", false, "Output default content (ignores PRIME.md override)")
-	primeCmd.Flags().BoolVar(&primeGeminiHookMode, "gemini-hook", false, "Wrap output in Gemini CLI hook JSON envelope (SessionStart event)")
+	primeCmd.Flags().BoolVar(&primeHookJSONMode, "hook-json", false, "Wrap output in the SessionStart hook JSON envelope (Claude Code, Gemini CLI, Codex)")
 	rootCmd.AddCommand(primeCmd)
 }
 
-// outputGeminiHook wraps content in the Gemini CLI hook JSON envelope for the
-// SessionStart event. Gemini's hook contract requires stdout to be valid JSON
-// — no plain text may be emitted alongside it. See:
+// outputHookJSON wraps content in the SessionStart hook JSON envelope shared
+// by Claude Code, Gemini CLI, and Codex. All three require stdout to be valid
+// JSON — no plain text may be emitted alongside it. See:
 // https://geminicli.com/docs/hooks/reference/
-func outputGeminiHook(w io.Writer, content string) error {
+func outputHookJSON(w io.Writer, content string) error {
 	type hookSpecificOutput struct {
 		HookEventName     string `json:"hookEventName"`
 		AdditionalContext string `json:"additionalContext"`

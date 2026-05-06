@@ -105,8 +105,8 @@ func TestInstallGemini_Global(t *testing.T) {
 	hook := sessionStart[0].(map[string]interface{})
 	cmds := hook["hooks"].([]interface{})
 	cmd := cmds[0].(map[string]interface{})
-	if cmd["command"] != "bd prime --gemini-hook" {
-		t.Errorf("expected SessionStart command 'bd prime --gemini-hook', got: %v", cmd["command"])
+	if cmd["command"] != "bd prime --hook-json" {
+		t.Errorf("expected SessionStart command 'bd prime --hook-json', got: %v", cmd["command"])
 	}
 
 	// PreCompress must NOT be registered: per Gemini docs it's advisory-only
@@ -174,8 +174,8 @@ func TestInstallGemini_Stealth(t *testing.T) {
 	cmds := hook["hooks"].([]interface{})
 	cmd := cmds[0].(map[string]interface{})
 
-	if cmd["command"] != "bd prime --stealth --gemini-hook" {
-		t.Errorf("expected stealth command 'bd prime --stealth --gemini-hook', got: %v", cmd["command"])
+	if cmd["command"] != "bd prime --stealth --hook-json" {
+		t.Errorf("expected stealth command 'bd prime --stealth --hook-json', got: %v", cmd["command"])
 	}
 }
 
@@ -203,7 +203,7 @@ func TestInstallGemini_Idempotent(t *testing.T) {
 
 // TestInstallGemini_MigratesLegacyHooks verifies that re-running bd setup gemini
 // on a pre-fix installation (which had bare "bd prime" on SessionStart and/or
-// PreCompress) results in exactly one canonical "bd prime --gemini-hook" entry
+// PreCompress) results in exactly one canonical "bd prime --hook-json" entry
 // on SessionStart and no PreCompress entries. Leaving stale entries alongside
 // the new one would cause Gemini to invoke both, and the legacy command emits
 // raw markdown that violates Gemini's strict stdout-must-be-JSON contract.
@@ -250,8 +250,8 @@ func TestInstallGemini_MigratesLegacyHooks(t *testing.T) {
 	hook := sessionStart[0].(map[string]interface{})
 	cmds := hook["hooks"].([]interface{})
 	cmd := cmds[0].(map[string]interface{})
-	if cmd["command"] != "bd prime --gemini-hook" {
-		t.Errorf("SessionStart command = %q, want 'bd prime --gemini-hook'", cmd["command"])
+	if cmd["command"] != "bd prime --hook-json" {
+		t.Errorf("SessionStart command = %q, want 'bd prime --hook-json'", cmd["command"])
 	}
 
 	// PreCompress: must be absent or empty.
@@ -551,18 +551,21 @@ func TestHasGeminiBeadsHooks(t *testing.T) {
 		settings map[string]interface{}
 		want     bool
 	}{
-		// New canonical commands (post --gemini-hook fix)
-		{"new bd prime --gemini-hook on SessionStart", makeSessionStart("bd prime --gemini-hook"), true},
-		{"new bd prime --stealth --gemini-hook on SessionStart", makeSessionStart("bd prime --stealth --gemini-hook"), true},
+		// Current canonical commands (--hook-json)
+		{"current bd prime --hook-json on SessionStart", makeSessionStart("bd prime --hook-json"), true},
+		{"current bd prime --stealth --hook-json on SessionStart", makeSessionStart("bd prime --stealth --hook-json"), true},
 
-		// Legacy commands — still detected so pre-fix installations show as installed
+		// Legacy commands (pre --hook-json rename) — still detected so older
+		// installations show legacy advisory rather than "not installed".
+		{"legacy bd prime --gemini-hook on SessionStart", makeSessionStart("bd prime --gemini-hook"), true},
+		{"legacy bd prime --stealth --gemini-hook on SessionStart", makeSessionStart("bd prime --stealth --gemini-hook"), true},
 		{"legacy bd prime on SessionStart", makeSessionStart("bd prime"), true},
 		{"legacy bd prime --stealth on SessionStart", makeSessionStart("bd prime --stealth"), true},
 
 		// PreCompress is no longer in scope — even legacy installations there
 		// must NOT be reported as installed (we want users to re-run setup).
 		{"bd prime on PreCompress only — not detected", makePreCompress("bd prime"), false},
-		{"bd prime --gemini-hook on PreCompress only — not detected", makePreCompress("bd prime --gemini-hook"), false},
+		{"bd prime --hook-json on PreCompress only — not detected", makePreCompress("bd prime --hook-json"), false},
 
 		// Unrelated commands
 		{"unrelated command", makeSessionStart("some-other-command"), false},
@@ -620,7 +623,7 @@ func TestRemoveGemini_CleansAllVariants(t *testing.T) {
 				map[string]interface{}{
 					"matcher": "",
 					"hooks": []interface{}{
-						map[string]interface{}{"type": "command", "command": "bd prime --gemini-hook"},
+						map[string]interface{}{"type": "command", "command": "bd prime --hook-json"},
 					},
 				},
 			},

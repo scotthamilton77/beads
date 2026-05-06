@@ -229,8 +229,8 @@ bd setup claude --stealth
 ### What Gets Installed
 
 **Global installation** (`~/.claude/settings.json`):
-- `SessionStart` hook: Runs `bd prime` when a new session starts
-- `PreCompact` hook: Runs `bd prime` before context compaction
+- `SessionStart` hook: Runs `bd prime --hook-json` when a new session starts
+- `PreCompact` hook: Runs `bd prime --hook-json` before context compaction
 
 **Project installation** (`.claude/settings.local.json`):
 - Same hooks, but only active for this project
@@ -265,8 +265,8 @@ bd setup claude --project --stealth
 
 ### How It Works
 
-The hooks call `bd prime` which:
-1. Outputs workflow context for Claude to read
+The hooks call `bd prime --hook-json` which:
+1. Outputs workflow context wrapped in the SessionStart JSON envelope Claude Code expects
 2. Syncs any pending changes
 3. Ensures Claude always knows how to use beads
 4. Follows resolved workspace semantics, so `bd where` is the right diagnostic check when local `./.beads` is absent
