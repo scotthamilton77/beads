@@ -20,10 +20,10 @@ import (
 )
 
 var (
-	primeFullMode       bool
-	primeMCPMode        bool
-	primeStealthMode    bool
-	primeExportMode     bool
+	primeFullMode     bool
+	primeMCPMode      bool
+	primeStealthMode  bool
+	primeExportMode   bool
 	primeHookJSONMode bool
 )
 
