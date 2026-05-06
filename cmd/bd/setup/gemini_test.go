@@ -201,6 +201,65 @@ func TestInstallGemini_Idempotent(t *testing.T) {
 	}
 }
 
+// TestInstallGemini_MigratesLegacyHooks verifies that re-running bd setup gemini
+// on a pre-fix installation (which had bare "bd prime" on SessionStart and/or
+// PreCompress) results in exactly one canonical "bd prime --gemini-hook" entry
+// on SessionStart and no PreCompress entries. Leaving stale entries alongside
+// the new one would cause Gemini to invoke both, and the legacy command emits
+// raw markdown that violates Gemini's strict stdout-must-be-JSON contract.
+func TestInstallGemini_MigratesLegacyHooks(t *testing.T) {
+	env, _, _ := newGeminiTestEnv(t)
+
+	// Seed a settings file that mirrors a pre-fix installation.
+	settingsPath := geminiGlobalSettingsPath(env.homeDir)
+	legacy := map[string]interface{}{
+		"hooks": map[string]interface{}{
+			"SessionStart": []interface{}{
+				map[string]interface{}{
+					"matcher": "",
+					"hooks": []interface{}{
+						map[string]interface{}{"type": "command", "command": "bd prime"},
+					},
+				},
+			},
+			"PreCompress": []interface{}{
+				map[string]interface{}{
+					"matcher": "",
+					"hooks": []interface{}{
+						map[string]interface{}{"type": "command", "command": "bd prime"},
+					},
+				},
+			},
+		},
+	}
+	writeGeminiSettings(t, settingsPath, legacy)
+
+	// Re-run setup — must behave as a clean upgrade, not an accumulation.
+	if err := installGemini(env, false, false); err != nil {
+		t.Fatalf("installGemini: %v", err)
+	}
+
+	settings := readGeminiSettings(t, settingsPath)
+	hooks := settings["hooks"].(map[string]interface{})
+
+	// SessionStart: exactly one entry, the canonical --gemini-hook command.
+	sessionStart, ok := hooks["SessionStart"].([]interface{})
+	if !ok || len(sessionStart) != 1 {
+		t.Fatalf("expected exactly 1 SessionStart hook after migration, got %v", hooks["SessionStart"])
+	}
+	hook := sessionStart[0].(map[string]interface{})
+	cmds := hook["hooks"].([]interface{})
+	cmd := cmds[0].(map[string]interface{})
+	if cmd["command"] != "bd prime --gemini-hook" {
+		t.Errorf("SessionStart command = %q, want 'bd prime --gemini-hook'", cmd["command"])
+	}
+
+	// PreCompress: must be absent or empty.
+	if pc, ok := hooks["PreCompress"].([]interface{}); ok && len(pc) > 0 {
+		t.Errorf("expected PreCompress cleared after migration, got %d entries", len(pc))
+	}
+}
+
 func TestInstallGemini_PreservesExistingSettings(t *testing.T) {
 	env, _, _ := newGeminiTestEnv(t)
 

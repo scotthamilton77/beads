@@ -123,6 +123,24 @@ func installGemini(env geminiEnv, project bool, stealth bool) error {
 		command = "bd prime --stealth --gemini-hook"
 	}
 
+	// Migration sweep: remove any pre-fix legacy variants before registering
+	// the canonical command. Re-running setup must be a clean upgrade path —
+	// leaving stale entries alongside the new one causes Gemini to invoke
+	// both, and the legacy variant emits raw markdown that violates Gemini's
+	// strict stdout-must-be-JSON contract.
+	legacyVariants := []string{"bd prime", "bd prime --stealth"}
+	for _, legacy := range legacyVariants {
+		if legacy == command {
+			continue // never remove the variant we're about to add
+		}
+		removeHookCommand(hooks, "SessionStart", legacy)
+		removeHookCommand(hooks, "PreCompress", legacy)
+	}
+	// Also clear any --gemini-hook registration from PreCompress — we never
+	// register there, but a prior manual edit might have added it.
+	removeHookCommand(hooks, "PreCompress", "bd prime --gemini-hook")
+	removeHookCommand(hooks, "PreCompress", "bd prime --stealth --gemini-hook")
+
 	if addHookCommand(hooks, "SessionStart", command) {
 		_, _ = fmt.Fprintln(env.stdout, "✓ Registered SessionStart hook")
 	}
