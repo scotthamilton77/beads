@@ -423,9 +423,18 @@ func outputMCPContext(w io.Writer, stealthMode bool) error {
 
 	redirectNotice := getRedirectNotice(false)
 
-	context := `# Beads Issue Tracker Active
+	header := `# Beads Issue Tracker Active
 
-` + redirectNotice + `# 🚨 SESSION CLOSE PROTOCOL 🚨
+` + redirectNotice
+
+	_, _ = fmt.Fprint(w, header)
+
+	// Inject memories before session protocol (compact for MCP)
+	if mem := formatMemoriesForPrime(true); mem != "" {
+		_, _ = fmt.Fprint(w, mem)
+	}
+
+	rest := `# 🚨 SESSION CLOSE PROTOCOL 🚨
 
 ` + closeProtocol + `
 
@@ -438,12 +447,7 @@ func outputMCPContext(w io.Writer, stealthMode bool) error {
 
 Start: Check ` + "`ready`" + ` tool for available work.
 `
-	_, _ = fmt.Fprint(w, context)
-
-	// Inject memories (compact for MCP)
-	if mem := formatMemoriesForPrime(true); mem != "" {
-		_, _ = fmt.Fprint(w, mem)
-	}
+	_, _ = fmt.Fprint(w, rest)
 
 	return nil
 }
@@ -532,12 +536,21 @@ git push                    # Push to remote
 
 	redirectNotice := getRedirectNotice(true)
 
-	context := `# Beads Workflow Context
+	header := `# Beads Workflow Context
 
 > **Context Recovery**: Run ` + "`bd prime`" + ` after compaction, clear, or new session
 > Hooks auto-call this in Claude Code when a beads workspace is resolved
 
-` + redirectNotice + `# 🚨 SESSION CLOSE PROTOCOL 🚨
+` + redirectNotice
+
+	_, _ = fmt.Fprint(w, header)
+
+	// Inject memories before session protocol (full format for CLI)
+	if mem := formatMemoriesForPrime(false); mem != "" {
+		_, _ = fmt.Fprint(w, mem)
+	}
+
+	context := `# 🚨 SESSION CLOSE PROTOCOL 🚨
 
 **CRITICAL**: Before saying "done" or "complete", you MUST run this checklist:
 
@@ -629,11 +642,6 @@ bd dep add beads-yyy beads-xxx  # Tests depend on Feature (Feature blocks tests)
 ` + "```" + `
 `
 	_, _ = fmt.Fprint(w, context)
-
-	// Inject memories (full format for CLI)
-	if mem := formatMemoriesForPrime(false); mem != "" {
-		_, _ = fmt.Fprint(w, mem)
-	}
 
 	return nil
 }
