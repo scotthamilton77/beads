@@ -292,6 +292,44 @@ func TestInstallGemini_PreservesExistingSettings(t *testing.T) {
 	}
 }
 
+// TestCheckGemini_LegacyInstall verifies that checkGemini returns
+// errGeminiHooksLegacy and emits an upgrade advisory when the settings file
+// contains a pre-fix "bd prime" registration (without --gemini-hook).
+// Legacy hooks emit raw markdown that violates Gemini's JSON stdout contract,
+// so --check must distinguish them from a working current install.
+func TestCheckGemini_LegacyInstall(t *testing.T) {
+	env, stdout, _ := newGeminiTestEnv(t)
+
+	// Seed a pre-fix installation: bare "bd prime" on SessionStart.
+	settingsPath := geminiGlobalSettingsPath(env.homeDir)
+	legacy := map[string]interface{}{
+		"hooks": map[string]interface{}{
+			"SessionStart": []interface{}{
+				map[string]interface{}{
+					"matcher": "",
+					"hooks": []interface{}{
+						map[string]interface{}{"type": "command", "command": "bd prime"},
+					},
+				},
+			},
+		},
+	}
+	writeGeminiSettings(t, settingsPath, legacy)
+
+	err := checkGemini(env)
+	if err != errGeminiHooksLegacy {
+		t.Errorf("expected errGeminiHooksLegacy, got: %v", err)
+	}
+
+	out := stdout.String()
+	if !strings.Contains(out, "legacy") {
+		t.Errorf("expected 'legacy' in output, got: %s", out)
+	}
+	if !strings.Contains(out, "bd setup gemini") {
+		t.Errorf("expected upgrade instruction in output, got: %s", out)
+	}
+}
+
 func TestCheckGemini_NotInstalled(t *testing.T) {
 	env, stdout, _ := newGeminiTestEnv(t)
 

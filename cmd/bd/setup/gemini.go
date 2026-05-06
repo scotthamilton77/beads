@@ -14,6 +14,7 @@ import (
 var (
 	geminiEnvProvider     = defaultGeminiEnv
 	errGeminiHooksMissing = errors.New("gemini hooks not installed")
+	errGeminiHooksLegacy  = errors.New("gemini hooks need upgrade")
 )
 
 const geminiInstructionsFile = "GEMINI.md"
@@ -187,10 +188,20 @@ func checkGemini(env geminiEnv) error {
 	projectSettings := geminiProjectSettingsPath(env.projectDir)
 
 	switch {
+	case hasCurrentGeminiHooks(globalSettings):
+		_, _ = fmt.Fprintf(env.stdout, "✓ Global hooks installed (current): %s\n", globalSettings)
+	case hasCurrentGeminiHooks(projectSettings):
+		_, _ = fmt.Fprintf(env.stdout, "✓ Project hooks installed (current): %s\n", projectSettings)
 	case hasGeminiBeadsHooks(globalSettings):
-		_, _ = fmt.Fprintf(env.stdout, "✓ Global hooks installed: %s\n", globalSettings)
+		_, _ = fmt.Fprintf(env.stdout, "⚠ Global hooks installed (legacy format): %s\n", globalSettings)
+		_, _ = fmt.Fprintln(env.stdout, "  Legacy 'bd prime' hooks emit raw markdown; Gemini requires JSON stdout.")
+		_, _ = fmt.Fprintln(env.stdout, "  Run: bd setup gemini  (upgrades to 'bd prime --gemini-hook')")
+		return errGeminiHooksLegacy
 	case hasGeminiBeadsHooks(projectSettings):
-		_, _ = fmt.Fprintf(env.stdout, "✓ Project hooks installed: %s\n", projectSettings)
+		_, _ = fmt.Fprintf(env.stdout, "⚠ Project hooks installed (legacy format): %s\n", projectSettings)
+		_, _ = fmt.Fprintln(env.stdout, "  Legacy 'bd prime' hooks emit raw markdown; Gemini requires JSON stdout.")
+		_, _ = fmt.Fprintln(env.stdout, "  Run: bd setup gemini --project  (upgrades to 'bd prime --gemini-hook')")
+		return errGeminiHooksLegacy
 	default:
 		_, _ = fmt.Fprintln(env.stdout, "✗ No hooks installed")
 		_, _ = fmt.Fprintln(env.stdout, "  Run: bd setup gemini")
@@ -274,57 +285,72 @@ func removeGemini(env geminiEnv, project bool) error {
 	return nil
 }
 
-// hasGeminiBeadsHooks checks if a settings file has bd prime hooks for Gemini CLI
-func hasGeminiBeadsHooks(settingsPath string) bool {
-	data, err := os.ReadFile(settingsPath) // #nosec G304 -- settingsPath is constructed from known safe locations (user home/.gemini), not user input
+// geminiSessionStartCommands returns all command strings registered under the
+// SessionStart hook event in a settings file. Returns nil on any read/parse
+// error. Detection scope is SessionStart only — PreCompress is advisory-only
+// in Gemini CLI and does not support additionalContext injection.
+func geminiSessionStartCommands(settingsPath string) []string {
+	data, err := os.ReadFile(settingsPath) // #nosec G304 -- path constructed from known safe locations (user home/.gemini or cwd/.gemini)
 	if err != nil {
-		return false
+		return nil
 	}
-
 	var settings map[string]interface{}
 	if err := json.Unmarshal(data, &settings); err != nil {
-		return false
+		return nil
 	}
-
 	hooks, ok := settings["hooks"].(map[string]interface{})
 	if !ok {
-		return false
+		return nil
 	}
-
-	// Detection scope: SessionStart only. We no longer register on
-	// PreCompress (Gemini's PreCompress hook does not support
-	// additionalContext injection), so a presence check there would
-	// surface stale legacy registrations rather than a working install.
-	// Legacy "bd prime" / "bd prime --stealth" are still recognized so
-	// pre-fix installations show up as installed.
-	for _, event := range []string{"SessionStart"} {
-		eventHooks, ok := hooks[event].([]interface{})
+	eventHooks, ok := hooks["SessionStart"].([]interface{})
+	if !ok {
+		return nil
+	}
+	var cmds []string
+	for _, hook := range eventHooks {
+		hookMap, ok := hook.(map[string]interface{})
 		if !ok {
 			continue
 		}
-
-		for _, hook := range eventHooks {
-			hookMap, ok := hook.(map[string]interface{})
+		hookCmds, ok := hookMap["hooks"].([]interface{})
+		if !ok {
+			continue
+		}
+		for _, cmd := range hookCmds {
+			cmdMap, ok := cmd.(map[string]interface{})
 			if !ok {
 				continue
 			}
-			commands, ok := hookMap["hooks"].([]interface{})
-			if !ok {
-				continue
-			}
-			for _, cmd := range commands {
-				cmdMap, ok := cmd.(map[string]interface{})
-				if !ok {
-					continue
-				}
-				cmdStr := cmdMap["command"]
-				if cmdStr == "bd prime" || cmdStr == "bd prime --stealth" ||
-					cmdStr == "bd prime --gemini-hook" || cmdStr == "bd prime --stealth --gemini-hook" {
-					return true
-				}
+			if s, ok := cmdMap["command"].(string); ok {
+				cmds = append(cmds, s)
 			}
 		}
 	}
+	return cmds
+}
 
+// hasCurrentGeminiHooks reports whether a settings file has a current-format
+// bd prime --gemini-hook command on SessionStart. Returns false for legacy
+// "bd prime" (without --gemini-hook) installs, which emit raw markdown that
+// violates Gemini's strict stdout-must-be-JSON hook contract.
+func hasCurrentGeminiHooks(settingsPath string) bool {
+	for _, cmd := range geminiSessionStartCommands(settingsPath) {
+		if cmd == "bd prime --gemini-hook" || cmd == "bd prime --stealth --gemini-hook" {
+			return true
+		}
+	}
+	return false
+}
+
+// hasGeminiBeadsHooks reports whether a settings file has any bd prime hook
+// on SessionStart — current format or legacy. Used to detect pre-fix
+// installations that need upgrading via bd setup gemini.
+func hasGeminiBeadsHooks(settingsPath string) bool {
+	for _, cmd := range geminiSessionStartCommands(settingsPath) {
+		if cmd == "bd prime" || cmd == "bd prime --stealth" ||
+			cmd == "bd prime --gemini-hook" || cmd == "bd prime --stealth --gemini-hook" {
+			return true
+		}
+	}
 	return false
 }
