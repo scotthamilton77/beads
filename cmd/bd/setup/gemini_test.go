@@ -242,7 +242,7 @@ func TestInstallGemini_MigratesLegacyHooks(t *testing.T) {
 	settings := readGeminiSettings(t, settingsPath)
 	hooks := settings["hooks"].(map[string]interface{})
 
-	// SessionStart: exactly one entry, the canonical --gemini-hook command.
+	// SessionStart: exactly one entry, the canonical --hook-json command.
 	sessionStart, ok := hooks["SessionStart"].([]interface{})
 	if !ok || len(sessionStart) != 1 {
 		t.Fatalf("expected exactly 1 SessionStart hook after migration, got %v", hooks["SessionStart"])
@@ -555,10 +555,8 @@ func TestHasGeminiBeadsHooks(t *testing.T) {
 		{"current bd prime --hook-json on SessionStart", makeSessionStart("bd prime --hook-json"), true},
 		{"current bd prime --stealth --hook-json on SessionStart", makeSessionStart("bd prime --stealth --hook-json"), true},
 
-		// Legacy commands (pre --hook-json rename) — still detected so older
-		// installations show legacy advisory rather than "not installed".
-		{"legacy bd prime --gemini-hook on SessionStart", makeSessionStart("bd prime --gemini-hook"), true},
-		{"legacy bd prime --stealth --gemini-hook on SessionStart", makeSessionStart("bd prime --stealth --gemini-hook"), true},
+		// Legacy commands — still detected so pre-hook-json installations show
+		// the upgrade advisory rather than "not installed".
 		{"legacy bd prime on SessionStart", makeSessionStart("bd prime"), true},
 		{"legacy bd prime --stealth on SessionStart", makeSessionStart("bd prime --stealth"), true},
 
@@ -614,8 +612,8 @@ func TestHasGeminiBeadsHooks(t *testing.T) {
 func TestRemoveGemini_CleansAllVariants(t *testing.T) {
 	env, _, _ := newGeminiTestEnv(t)
 
-	// Seed a settings file with a legacy registration on PreCompress
-	// alongside a current --gemini-hook registration on SessionStart.
+	// Seed a settings file with a current --hook-json registration on SessionStart
+	// and legacy bare-command registrations on PreCompress.
 	settingsPath := geminiGlobalSettingsPath(env.homeDir)
 	existing := map[string]interface{}{
 		"hooks": map[string]interface{}{

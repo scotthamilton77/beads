@@ -129,10 +129,7 @@ func installGemini(env geminiEnv, project bool, stealth bool) error {
 	// the canonical command. Re-running setup must be a clean upgrade path —
 	// stale entries alongside the new one cause Gemini to invoke both, and any
 	// pre-JSON variant emits raw markdown that violates the strict hook contract.
-	legacyVariants := []string{
-		"bd prime", "bd prime --stealth",
-		"bd prime --gemini-hook", "bd prime --stealth --gemini-hook",
-	}
+	legacyVariants := []string{"bd prime", "bd prime --stealth"}
 	for _, legacy := range legacyVariants {
 		if legacy == command {
 			continue // never remove the variant we're about to add
@@ -260,8 +257,6 @@ func removeGemini(env geminiEnv, project bool) error {
 			variants := []string{
 				"bd prime",
 				"bd prime --stealth",
-				"bd prime --gemini-hook",
-				"bd prime --stealth --gemini-hook",
 				"bd prime --hook-json",
 				"bd prime --stealth --hook-json",
 			}
@@ -356,7 +351,6 @@ func hasGeminiBeadsHooks(settingsPath string) bool {
 	for _, cmd := range geminiSessionStartCommands(settingsPath) {
 		switch cmd {
 		case "bd prime", "bd prime --stealth",
-			"bd prime --gemini-hook", "bd prime --stealth --gemini-hook",
 			"bd prime --hook-json", "bd prime --stealth --hook-json":
 			return true
 		}
