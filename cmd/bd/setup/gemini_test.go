@@ -95,16 +95,25 @@ func TestInstallGemini_Global(t *testing.T) {
 		t.Fatal("expected hooks map")
 	}
 
-	// Check SessionStart hook
+	// Check SessionStart hook is registered with the --gemini-hook variant.
+	// Gemini's hook contract requires JSON-on-stdout; --gemini-hook wraps
+	// bd prime's markdown in the SessionStart envelope shape.
 	sessionStart, ok := hooks["SessionStart"].([]interface{})
 	if !ok || len(sessionStart) == 0 {
 		t.Fatal("expected SessionStart hooks")
 	}
+	hook := sessionStart[0].(map[string]interface{})
+	cmds := hook["hooks"].([]interface{})
+	cmd := cmds[0].(map[string]interface{})
+	if cmd["command"] != "bd prime --gemini-hook" {
+		t.Errorf("expected SessionStart command 'bd prime --gemini-hook', got: %v", cmd["command"])
+	}
 
-	// Check PreCompress hook (Gemini uses PreCompress, not PreCompact)
-	preCompress, ok := hooks["PreCompress"].([]interface{})
-	if !ok || len(preCompress) == 0 {
-		t.Fatal("expected PreCompress hooks")
+	// PreCompress must NOT be registered: per Gemini docs it's advisory-only
+	// and does not support additionalContext injection, so re-priming after
+	// compression isn't possible there regardless of output format.
+	if _, ok := hooks["PreCompress"]; ok {
+		t.Error("PreCompress hook should not be registered (advisory-only event, no additionalContext support)")
 	}
 
 	// Verify output
@@ -165,8 +174,8 @@ func TestInstallGemini_Stealth(t *testing.T) {
 	cmds := hook["hooks"].([]interface{})
 	cmd := cmds[0].(map[string]interface{})
 
-	if cmd["command"] != "bd prime --stealth" {
-		t.Errorf("expected stealth command, got: %v", cmd["command"])
+	if cmd["command"] != "bd prime --stealth --gemini-hook" {
+		t.Errorf("expected stealth command 'bd prime --stealth --gemini-hook', got: %v", cmd["command"])
 	}
 }
 
@@ -411,58 +420,143 @@ func TestRemoveGemini_PreservesOtherHooks(t *testing.T) {
 }
 
 func TestHasGeminiBeadsHooks(t *testing.T) {
-	tmpDir := t.TempDir()
-	settingsPath := filepath.Join(tmpDir, "settings.json")
-
-	// No file
-	if hasGeminiBeadsHooks(settingsPath) {
-		t.Error("expected false for missing file")
+	makeSessionStart := func(command string) map[string]interface{} {
+		return map[string]interface{}{
+			"hooks": map[string]interface{}{
+				"SessionStart": []interface{}{
+					map[string]interface{}{
+						"matcher": "",
+						"hooks": []interface{}{
+							map[string]interface{}{"type": "command", "command": command},
+						},
+					},
+				},
+			},
+		}
+	}
+	makePreCompress := func(command string) map[string]interface{} {
+		return map[string]interface{}{
+			"hooks": map[string]interface{}{
+				"PreCompress": []interface{}{
+					map[string]interface{}{
+						"matcher": "",
+						"hooks": []interface{}{
+							map[string]interface{}{"type": "command", "command": command},
+						},
+					},
+				},
+			},
+		}
 	}
 
-	// Empty file
-	if err := os.WriteFile(settingsPath, []byte("{}"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if hasGeminiBeadsHooks(settingsPath) {
-		t.Error("expected false for empty settings")
+	tests := []struct {
+		name     string
+		settings map[string]interface{}
+		want     bool
+	}{
+		// New canonical commands (post --gemini-hook fix)
+		{"new bd prime --gemini-hook on SessionStart", makeSessionStart("bd prime --gemini-hook"), true},
+		{"new bd prime --stealth --gemini-hook on SessionStart", makeSessionStart("bd prime --stealth --gemini-hook"), true},
+
+		// Legacy commands — still detected so pre-fix installations show as installed
+		{"legacy bd prime on SessionStart", makeSessionStart("bd prime"), true},
+		{"legacy bd prime --stealth on SessionStart", makeSessionStart("bd prime --stealth"), true},
+
+		// PreCompress is no longer in scope — even legacy installations there
+		// must NOT be reported as installed (we want users to re-run setup).
+		{"bd prime on PreCompress only — not detected", makePreCompress("bd prime"), false},
+		{"bd prime --gemini-hook on PreCompress only — not detected", makePreCompress("bd prime --gemini-hook"), false},
+
+		// Unrelated commands
+		{"unrelated command", makeSessionStart("some-other-command"), false},
 	}
 
-	// With bd prime hook
-	settings := map[string]interface{}{
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpDir := t.TempDir()
+			settingsPath := filepath.Join(tmpDir, "settings.json")
+			data, err := json.Marshal(tt.settings)
+			if err != nil {
+				t.Fatalf("marshal: %v", err)
+			}
+			if err := os.WriteFile(settingsPath, data, 0o644); err != nil {
+				t.Fatalf("write: %v", err)
+			}
+			if got := hasGeminiBeadsHooks(settingsPath); got != tt.want {
+				t.Errorf("hasGeminiBeadsHooks(%s) = %v, want %v", tt.name, got, tt.want)
+			}
+		})
+	}
+
+	// Edge cases: missing file and empty settings
+	t.Run("missing file", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		if hasGeminiBeadsHooks(filepath.Join(tmpDir, "missing.json")) {
+			t.Error("expected false for missing file")
+		}
+	})
+	t.Run("empty settings", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		settingsPath := filepath.Join(tmpDir, "settings.json")
+		if err := os.WriteFile(settingsPath, []byte("{}"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if hasGeminiBeadsHooks(settingsPath) {
+			t.Error("expected false for empty settings")
+		}
+	})
+}
+
+// TestRemoveGemini_CleansAllVariants verifies that removeGemini cleans up
+// every known command variant from BOTH SessionStart and PreCompress —
+// migration safety for pre-fix installations that registered legacy commands
+// on PreCompress.
+func TestRemoveGemini_CleansAllVariants(t *testing.T) {
+	env, _, _ := newGeminiTestEnv(t)
+
+	// Seed a settings file with a legacy registration on PreCompress
+	// alongside a current --gemini-hook registration on SessionStart.
+	settingsPath := geminiGlobalSettingsPath(env.homeDir)
+	existing := map[string]interface{}{
 		"hooks": map[string]interface{}{
 			"SessionStart": []interface{}{
+				map[string]interface{}{
+					"matcher": "",
+					"hooks": []interface{}{
+						map[string]interface{}{"type": "command", "command": "bd prime --gemini-hook"},
+					},
+				},
+			},
+			"PreCompress": []interface{}{
 				map[string]interface{}{
 					"matcher": "",
 					"hooks": []interface{}{
 						map[string]interface{}{"type": "command", "command": "bd prime"},
 					},
 				},
+				map[string]interface{}{
+					"matcher": "",
+					"hooks": []interface{}{
+						map[string]interface{}{"type": "command", "command": "bd prime --stealth"},
+					},
+				},
 			},
 		},
 	}
-	data, _ := json.Marshal(settings)
-	if err := os.WriteFile(settingsPath, data, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if !hasGeminiBeadsHooks(settingsPath) {
-		t.Error("expected true for settings with bd prime hook")
+	writeGeminiSettings(t, settingsPath, existing)
+
+	if err := removeGemini(env, false); err != nil {
+		t.Fatalf("removeGemini: %v", err)
 	}
 
-	// With stealth hook
-	settings["hooks"].(map[string]interface{})["SessionStart"] = []interface{}{
-		map[string]interface{}{
-			"matcher": "",
-			"hooks": []interface{}{
-				map[string]interface{}{"type": "command", "command": "bd prime --stealth"},
-			},
-		},
+	settings := readGeminiSettings(t, settingsPath)
+	hooks := settings["hooks"].(map[string]interface{})
+
+	if ss, ok := hooks["SessionStart"].([]interface{}); ok && len(ss) > 0 {
+		t.Errorf("expected SessionStart cleared, got %d entries", len(ss))
 	}
-	data, _ = json.Marshal(settings)
-	if err := os.WriteFile(settingsPath, data, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if !hasGeminiBeadsHooks(settingsPath) {
-		t.Error("expected true for settings with bd prime --stealth hook")
+	if pc, ok := hooks["PreCompress"].([]interface{}); ok && len(pc) > 0 {
+		t.Errorf("expected legacy PreCompress entries cleared, got %d entries", len(pc))
 	}
 }
 

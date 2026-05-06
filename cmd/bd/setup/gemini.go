@@ -114,17 +114,17 @@ func installGemini(env geminiEnv, project bool, stealth bool) error {
 		settings["hooks"] = hooks
 	}
 
-	command := "bd prime"
+	// Gemini CLI requires stdout to be valid JSON for hooks; --gemini-hook
+	// wraps bd prime's markdown in the SessionStart envelope shape Gemini
+	// expects. PreCompress is intentionally NOT registered: per Gemini docs
+	// it is advisory-only and does not support additionalContext injection.
+	command := "bd prime --gemini-hook"
 	if stealth {
-		command = "bd prime --stealth"
+		command = "bd prime --stealth --gemini-hook"
 	}
 
-	// Gemini CLI uses "PreCompress" instead of Claude's "PreCompact"
 	if addHookCommand(hooks, "SessionStart", command) {
 		_, _ = fmt.Fprintln(env.stdout, "✓ Registered SessionStart hook")
-	}
-	if addHookCommand(hooks, "PreCompress", command) {
-		_, _ = fmt.Fprintln(env.stdout, "✓ Registered PreCompress hook")
 	}
 
 	data, err := json.MarshalIndent(settings, "", "  ")
@@ -219,11 +219,20 @@ func removeGemini(env geminiEnv, project bool) error {
 		if !ok {
 			_, _ = fmt.Fprintln(env.stdout, "No hooks found")
 		} else {
-			// Remove both variants from both events
-			removeHookCommand(hooks, "SessionStart", "bd prime")
-			removeHookCommand(hooks, "PreCompress", "bd prime")
-			removeHookCommand(hooks, "SessionStart", "bd prime --stealth")
-			removeHookCommand(hooks, "PreCompress", "bd prime --stealth")
+			// Remove all known variants from both events. PreCompress is
+			// included for migration safety: older installations registered
+			// bd prime there before we discovered Gemini's PreCompress hook
+			// can't inject additionalContext.
+			variants := []string{
+				"bd prime",
+				"bd prime --stealth",
+				"bd prime --gemini-hook",
+				"bd prime --stealth --gemini-hook",
+			}
+			for _, cmd := range variants {
+				removeHookCommand(hooks, "SessionStart", cmd)
+				removeHookCommand(hooks, "PreCompress", cmd)
+			}
 
 			data, err = json.MarshalIndent(settings, "", "  ")
 			if err != nil {
@@ -264,8 +273,13 @@ func hasGeminiBeadsHooks(settingsPath string) bool {
 		return false
 	}
 
-	// Check SessionStart and PreCompress for "bd prime"
-	for _, event := range []string{"SessionStart", "PreCompress"} {
+	// Detection scope: SessionStart only. We no longer register on
+	// PreCompress (Gemini's PreCompress hook does not support
+	// additionalContext injection), so a presence check there would
+	// surface stale legacy registrations rather than a working install.
+	// Legacy "bd prime" / "bd prime --stealth" are still recognized so
+	// pre-fix installations show up as installed.
+	for _, event := range []string{"SessionStart"} {
 		eventHooks, ok := hooks[event].([]interface{})
 		if !ok {
 			continue
@@ -285,9 +299,9 @@ func hasGeminiBeadsHooks(settingsPath string) bool {
 				if !ok {
 					continue
 				}
-				// Check for either variant
 				cmdStr := cmdMap["command"]
-				if cmdStr == "bd prime" || cmdStr == "bd prime --stealth" {
+				if cmdStr == "bd prime" || cmdStr == "bd prime --stealth" ||
+					cmdStr == "bd prime --gemini-hook" || cmdStr == "bd prime --stealth --gemini-hook" {
 					return true
 				}
 			}
