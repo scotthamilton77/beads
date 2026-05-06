@@ -237,12 +237,54 @@ func TestPrime_GeminiHook_GlobalPrimeOverride(t *testing.T) {
 }
 
 // TestPrime_GeminiHook_RedirectedPrimeOverride: with --gemini-hook and a
-// PRIME.md at <beadsDir>/PRIME.md (workspace-level, not local clone), output
-// is the JSON envelope wrapping that file's contents. With a default
-// `bd init`, beadsDir == ./.beads — the redirected path is the same as the
-// local path. To exercise the dedicated branch we'd need a redirect setup;
-// the local-override test plus the unit test for outputGeminiHook cover the
-// wrapping contract for both code paths.
+// PRIME.md staged at <beadsDir>/PRIME.md where <beadsDir> is NOT the local
+// .beads directory (i.e. relocated via BEADS_DIR), the output is the JSON
+// envelope wrapping that file's contents. This exercises the redirected
+// path independently from the local path so DoD #2 ("ALL FOUR output paths
+// wrap correctly") is fully covered end-to-end.
+func TestPrime_GeminiHook_RedirectedPrimeOverride(t *testing.T) {
+	binPath := buildBDUnderTest(t)
+
+	// CWD has no .beads/ at all — the local override can't fire.
+	workDir := t.TempDir()
+
+	// Stage the relocated beads dir at a sibling path. We can't `bd init`
+	// straight into it (init resolves to ./.beads), so we init in a separate
+	// dir and copy the .beads/ into our target. That gives FindBeadsDir
+	// what it needs to validate the dir.
+	relocatedRoot := t.TempDir()
+	initBeadsWorkspace(t, binPath, relocatedRoot)
+	relocatedBeads := filepath.Join(relocatedRoot, ".beads")
+
+	const custom = "# Redirected PRIME override\nFrom a relocated beadsDir.\n"
+	if err := os.WriteFile(filepath.Join(relocatedBeads, "PRIME.md"), []byte(custom), 0o644); err != nil {
+		t.Fatalf("write redirected PRIME.md: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, binPath, "prime", "--gemini-hook")
+	cmd.Dir = workDir
+	cmd.Env = append(os.Environ(),
+		"HOME="+t.TempDir(),
+		"XDG_CONFIG_HOME="+t.TempDir(),
+		"BEADS_TEST_IGNORE_REPO_CONFIG=1",
+		"BEADS_DIR="+relocatedBeads, // forces FindBeadsDir to return this absolute path
+		"BEADS_DB=",
+		"LINEAR_API_KEY=",
+	)
+	var outBuf, errBuf bytes.Buffer
+	cmd.Stdout = &outBuf
+	cmd.Stderr = &errBuf
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("bd prime --gemini-hook: %v\nstdout: %s\nstderr: %s", err, outBuf.String(), errBuf.String())
+	}
+
+	env := parseEnvelope(t, outBuf.Bytes())
+	if env.HookSpecificOutput.AdditionalContext != custom {
+		t.Errorf("additionalContext = %q, want %q", env.HookSpecificOutput.AdditionalContext, custom)
+	}
+}
 
 // TestPrime_GeminiHook_NoBeadsWorkspace: when bd prime would otherwise emit
 // nothing (no beads workspace resolved), --gemini-hook still emits the empty
