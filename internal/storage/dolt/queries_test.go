@@ -1072,6 +1072,52 @@ func TestGetReadyWork_ExcludesTransitiveDescendantsOfBlockedParents(t *testing.T
 	}
 }
 
+// TestGetReadyWork_ExcludesDeeplyNestedDescendantsOfBlockedParents verifies that
+// the recursive descent handles chains deeper than two levels (4-level chain).
+func TestGetReadyWork_ExcludesDeeplyNestedDescendantsOfBlockedParents(t *testing.T) {
+	store, cleanup := setupTestStore(t)
+	defer cleanup()
+
+	ctx, cancel := testContext(t)
+	defer cancel()
+
+	// blocker → blocks → epic → child → grandchild → great-grandchild
+	blocker := &types.Issue{ID: "dn-blocker", Title: "Blocker", Status: types.StatusOpen, Priority: 1, IssueType: types.TypeEpic}
+	epic := &types.Issue{ID: "dn-epic", Title: "Epic", Status: types.StatusOpen, Priority: 2, IssueType: types.TypeEpic}
+	child := &types.Issue{ID: "dn-epic.1", Title: "Child", Status: types.StatusOpen, Priority: 2, IssueType: types.TypeTask}
+	grandchild := &types.Issue{ID: "dn-epic.1.1", Title: "Grandchild", Status: types.StatusOpen, Priority: 2, IssueType: types.TypeTask}
+	greatGrandchild := &types.Issue{ID: "dn-epic.1.1.1", Title: "Great-grandchild", Status: types.StatusOpen, Priority: 2, IssueType: types.TypeTask}
+
+	for _, iss := range []*types.Issue{blocker, epic, child, grandchild, greatGrandchild} {
+		if err := store.CreateIssue(ctx, iss, "tester"); err != nil {
+			t.Fatalf("create %s: %v", iss.ID, err)
+		}
+	}
+	deps := []types.Dependency{
+		{IssueID: epic.ID, DependsOnID: blocker.ID, Type: types.DepBlocks},
+		{IssueID: child.ID, DependsOnID: epic.ID, Type: types.DepParentChild},
+		{IssueID: grandchild.ID, DependsOnID: child.ID, Type: types.DepParentChild},
+		{IssueID: greatGrandchild.ID, DependsOnID: grandchild.ID, Type: types.DepParentChild},
+	}
+	for _, d := range deps {
+		d := d
+		if err := store.AddDependency(ctx, &d, "tester"); err != nil {
+			t.Fatalf("add dep %s->%s: %v", d.IssueID, d.DependsOnID, err)
+		}
+	}
+
+	ready, err := store.GetReadyWork(ctx, types.WorkFilter{})
+	if err != nil {
+		t.Fatalf("GetReadyWork: %v", err)
+	}
+	excluded := map[string]bool{child.ID: true, grandchild.ID: true, greatGrandchild.ID: true}
+	for _, iss := range ready {
+		if excluded[iss.ID] {
+			t.Errorf("%s (descendant of blocked epic) should NOT appear in ready work", iss.ID)
+		}
+	}
+}
+
 // TestGetBlockedIssues_IncludesTransitiveDescendantsOfBlockedParents verifies
 // that bd blocked shows grandchildren (and deeper) as blocked, not just direct
 // children.
