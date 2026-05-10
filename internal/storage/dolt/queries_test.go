@@ -1023,6 +1023,106 @@ func TestGetBlockedIssues_IncludesChildrenOfBlockedParents(t *testing.T) {
 	}
 }
 
+// TestGetReadyWork_ExcludesTransitiveDescendantsOfBlockedParents verifies that
+// grandchildren (and deeper) of a blocked parent are also excluded from ready
+// work — not just direct children.
+func TestGetReadyWork_ExcludesTransitiveDescendantsOfBlockedParents(t *testing.T) {
+	store, cleanup := setupTestStore(t)
+	defer cleanup()
+
+	ctx, cancel := testContext(t)
+	defer cancel()
+
+	// A (blocker) → blocks → B (epic) → child B1 → grandchild B1a
+	blocker := &types.Issue{ID: "rd-blocker", Title: "Blocker", Status: types.StatusOpen, Priority: 1, IssueType: types.TypeEpic}
+	epic := &types.Issue{ID: "rd-epic", Title: "Blocked Epic", Status: types.StatusOpen, Priority: 2, IssueType: types.TypeEpic}
+	child := &types.Issue{ID: "rd-epic.1", Title: "Child", Status: types.StatusOpen, Priority: 2, IssueType: types.TypeTask}
+	grandchild := &types.Issue{ID: "rd-epic.1.1", Title: "Grandchild", Status: types.StatusOpen, Priority: 2, IssueType: types.TypeTask}
+
+	for _, iss := range []*types.Issue{blocker, epic, child, grandchild} {
+		if err := store.CreateIssue(ctx, iss, "tester"); err != nil {
+			t.Fatalf("create %s: %v", iss.ID, err)
+		}
+	}
+
+	// blocker blocks epic
+	if err := store.AddDependency(ctx, &types.Dependency{IssueID: epic.ID, DependsOnID: blocker.ID, Type: types.DepBlocks}, "tester"); err != nil {
+		t.Fatalf("add blocks dep: %v", err)
+	}
+	// epic → child (parent-child)
+	if err := store.AddDependency(ctx, &types.Dependency{IssueID: child.ID, DependsOnID: epic.ID, Type: types.DepParentChild}, "tester"); err != nil {
+		t.Fatalf("add child dep: %v", err)
+	}
+	// child → grandchild (parent-child)
+	if err := store.AddDependency(ctx, &types.Dependency{IssueID: grandchild.ID, DependsOnID: child.ID, Type: types.DepParentChild}, "tester"); err != nil {
+		t.Fatalf("add grandchild dep: %v", err)
+	}
+
+	ready, err := store.GetReadyWork(ctx, types.WorkFilter{})
+	if err != nil {
+		t.Fatalf("GetReadyWork: %v", err)
+	}
+	for _, iss := range ready {
+		if iss.ID == child.ID {
+			t.Error("direct child of blocked parent should NOT be in ready work")
+		}
+		if iss.ID == grandchild.ID {
+			t.Error("grandchild of blocked parent should NOT be in ready work")
+		}
+	}
+}
+
+// TestGetBlockedIssues_IncludesTransitiveDescendantsOfBlockedParents verifies
+// that bd blocked shows grandchildren (and deeper) as blocked, not just direct
+// children.
+func TestGetBlockedIssues_IncludesTransitiveDescendantsOfBlockedParents(t *testing.T) {
+	store, cleanup := setupTestStore(t)
+	defer cleanup()
+
+	ctx, cancel := testContext(t)
+	defer cancel()
+
+	blocker := &types.Issue{ID: "bt-blocker", Title: "Blocker", Status: types.StatusOpen, Priority: 1, IssueType: types.TypeEpic}
+	epic := &types.Issue{ID: "bt-epic", Title: "Blocked Epic", Status: types.StatusOpen, Priority: 2, IssueType: types.TypeEpic}
+	child := &types.Issue{ID: "bt-epic.1", Title: "Child", Status: types.StatusOpen, Priority: 2, IssueType: types.TypeTask}
+	grandchild := &types.Issue{ID: "bt-epic.1.1", Title: "Grandchild", Status: types.StatusOpen, Priority: 2, IssueType: types.TypeTask}
+
+	for _, iss := range []*types.Issue{blocker, epic, child, grandchild} {
+		if err := store.CreateIssue(ctx, iss, "tester"); err != nil {
+			t.Fatalf("create %s: %v", iss.ID, err)
+		}
+	}
+
+	if err := store.AddDependency(ctx, &types.Dependency{IssueID: epic.ID, DependsOnID: blocker.ID, Type: types.DepBlocks}, "tester"); err != nil {
+		t.Fatalf("add blocks dep: %v", err)
+	}
+	if err := store.AddDependency(ctx, &types.Dependency{IssueID: child.ID, DependsOnID: epic.ID, Type: types.DepParentChild}, "tester"); err != nil {
+		t.Fatalf("add child dep: %v", err)
+	}
+	if err := store.AddDependency(ctx, &types.Dependency{IssueID: grandchild.ID, DependsOnID: child.ID, Type: types.DepParentChild}, "tester"); err != nil {
+		t.Fatalf("add grandchild dep: %v", err)
+	}
+
+	blocked, err := store.GetBlockedIssues(ctx, types.WorkFilter{})
+	if err != nil {
+		t.Fatalf("GetBlockedIssues: %v", err)
+	}
+
+	found := make(map[string]bool)
+	for _, bi := range blocked {
+		found[bi.Issue.ID] = true
+	}
+	if !found[epic.ID] {
+		t.Error("epic should be in blocked list")
+	}
+	if !found[child.ID] {
+		t.Error("direct child of blocked epic should be in blocked list")
+	}
+	if !found[grandchild.ID] {
+		t.Error("grandchild of blocked epic should be in blocked list")
+	}
+}
+
 // =============================================================================
 // SearchIssues tests
 // =============================================================================
