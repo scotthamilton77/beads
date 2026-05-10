@@ -246,7 +246,8 @@ func ComputeBlockedIDsInTx(ctx context.Context, tx *sql.Tx, includeWisps bool) (
 // GetTransitiveDescendantsWithParentsInTx returns a map of descendantID → immediateParentID
 // for ALL transitive parent-child descendants of the given issue IDs. Cycle detection via
 // path tracking prevents infinite traversal. When a descendant is reachable via multiple
-// paths, the first parent encountered is kept. Seeds are batched to stay under SQL
+// paths, an arbitrary immediate parent is recorded (the CTE has no ORDER BY, so which
+// parent is chosen is non-deterministic). Seeds are batched to stay under SQL
 // parameter limits; each batch's CTE recurses fully, so no descendants are missed.
 //
 //nolint:gosec // G201: edgeSQL built from hardcoded table names; placeholders use ? params
