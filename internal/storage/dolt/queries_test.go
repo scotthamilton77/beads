@@ -1121,6 +1121,15 @@ func TestGetBlockedIssues_IncludesTransitiveDescendantsOfBlockedParents(t *testi
 	if !found[grandchild.ID] {
 		t.Error("grandchild of blocked epic should be in blocked list")
 	}
+
+	// Verify grandchild is attributed to its immediate parent, not the root blocker.
+	for _, bi := range blocked {
+		if bi.Issue.ID == grandchild.ID {
+			if len(bi.BlockedBy) == 0 || bi.BlockedBy[0] != child.ID {
+				t.Errorf("grandchild BlockedBy should be [%s] (immediate parent), got %v", child.ID, bi.BlockedBy)
+			}
+		}
+	}
 }
 
 // =============================================================================
