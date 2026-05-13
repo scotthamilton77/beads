@@ -494,7 +494,7 @@ bd create [title] [flags]
       --spec-id string          Link to specification document
       --stdin                   Read description from stdin (alias for --body-file -)
       --title string            Issue title (alternative to positional argument)
-  -t, --type string             Issue type (bug|feature|task|epic|chore|decision); custom types require types.custom config; aliases: enhancement/feat→feature, dec/adr→decision (default "task")
+  -t, --type string             Issue type (bug|feature|task|epic|chore|decision|spike|story|milestone); custom types require types.custom config; aliases: enhancement/feat→feature, dec/adr→decision, investigation/timebox→spike, user-story→story, ms→milestone (default "task")
       --validate                Validate description contains required sections for issue type
       --waits-for string        Spawner issue ID to wait for (creates waits-for dependency for fanout gate)
       --waits-for-gate string   Gate type: all-children (wait for all) or any-children (wait for first) (default "all-children")
@@ -1472,7 +1472,7 @@ bd update [id...] [flags]
   -s, --status string                New status
       --stdin                        Read description from stdin (alias for --body-file -)
       --title string                 New title
-  -t, --type string                  New type (bug|feature|task|epic|chore|decision); custom types require types.custom config
+  -t, --type string                  New type (bug|feature|task|epic|chore|decision|spike|story|milestone); custom types require types.custom config; aliases: enhancement/feat→feature, dec/adr→decision, investigation/timebox→spike, user-story→story, ms→milestone
       --unset-metadata stringArray   Remove metadata key (repeatable, e.g., --unset-metadata team)
 ```
 

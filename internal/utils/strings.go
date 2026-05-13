@@ -4,12 +4,17 @@ import "strings"
 
 // issueTypeAliases maps shorthand type names to canonical types
 var issueTypeAliases = map[string]string{
-	"mr":          "merge-request",
-	"feat":        "feature",
-	"mol":         "molecule",
-	"enhancement": "feature",
-	"dec":         "decision",
-	"adr":         "decision",
+	"mr":            "merge-request",
+	"feat":          "feature",
+	"mol":           "molecule",
+	"enhancement":   "feature",
+	"dec":           "decision",
+	"adr":           "decision",
+	"investigation": "spike",
+	"timebox":       "spike",
+	"user-story":    "story",
+	"user_story":    "story",
+	"ms":            "milestone",
 }
 
 // NormalizeIssueType expands type aliases to their canonical forms.
