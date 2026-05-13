@@ -184,6 +184,61 @@ func TestNormalizeIssueType(t *testing.T) {
 			input:    "decision",
 			expected: "decision",
 		},
+		{
+			name:     "investigation alias",
+			input:    "investigation",
+			expected: "spike",
+		},
+		{
+			name:     "timebox alias",
+			input:    "timebox",
+			expected: "spike",
+		},
+		{
+			name:     "Timebox mixed case",
+			input:    "Timebox",
+			expected: "spike",
+		},
+		{
+			name:     "user-story alias",
+			input:    "user-story",
+			expected: "story",
+		},
+		{
+			name:     "user_story alias",
+			input:    "user_story",
+			expected: "story",
+		},
+		{
+			name:     "USER-STORY uppercase",
+			input:    "USER-STORY",
+			expected: "story",
+		},
+		{
+			name:     "ms alias",
+			input:    "ms",
+			expected: "milestone",
+		},
+		{
+			name:     "MS uppercase",
+			input:    "MS",
+			expected: "milestone",
+		},
+		{
+			name:     "spike unchanged",
+			input:    "spike",
+			expected: "spike",
+		},
+		{
+			name:     "story unchanged",
+			input:    "story",
+			expected: "story",
+		},
+		{
+			name:     "milestone unchanged",
+			input:    "milestone",
+			expected: "milestone",
+		},
 	}
 
 	for _, tt := range tests {
